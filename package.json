@@ -1,0 +1,39 @@
+{
+  "name": "claude-inspector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "여러 프로젝트의 오류와 정기 상태를 Claude Code로 점검하는 중앙 서버",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "dev:api": "tsx watch src/api/main.ts",
+    "dev:worker": "tsx src/worker/main.ts",
+    "migrate": "node dist/migrate.js",
+    "start:api": "node dist/migrate.js && node dist/api/main.js",
+    "start:worker": "node dist/worker/main.js",
+    "start:scheduler": "node dist/scheduler.js",
+    "project:add": "node dist/cli/add-project.js",
+    "dev:project:add": "tsx src/cli/add-project.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^2.1.311",
+    "fastify": "^5.12.7",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "@anthropic-ai/claude-code@2.1.311": true
+  }
+}
