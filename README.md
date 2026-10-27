@@ -1,6 +1,6 @@
 # claude-inspector
 
-여러 개인 프로젝트의 오류와 정기 상태를 한곳에서 점검하는 중앙 서버입니다. 각 프로젝트는 API를 호출만 하고, Claude Code 실행과 API 키 관리는 이 서버에서만 합니다. 설계는 [중앙 Claude 점검 서버 개발서.md](중앙%20Claude%20점검%20서버%20개발서.md)를 따르며, 현재 로드맵 1~3단계(API·큐·워커, 정기 점검·Discord 알림, 대시보드)가 구현되어 있습니다.
+여러 개인 프로젝트의 오류와 정기 상태를 한곳에서 점검하는 중앙 서버입니다. 각 프로젝트는 API를 호출만 하고, Claude Code 실행과 인증 정보 관리는 이 서버에서만 합니다. 설계는 [중앙 Claude 점검 서버 개발서.md](중앙%20Claude%20점검%20서버%20개발서.md)를 따르며, 현재 로드맵 1~3단계(API·큐·워커, 정기 점검·Discord 알림, 대시보드)가 구현되어 있습니다.
 
 ```
 프로젝트 ──POST /inspect──▶ API ──jobs 테이블(큐)──▶ 워커 ──git clone──▶ claude -p (읽기 전용)
@@ -45,7 +45,8 @@
 | `SCHEDULER_TOKEN` | api, scheduler | 스케줄러 전용 토큰. `openssl rand -base64 32` |
 | `DASHBOARD_PASSWORD` | api | 대시보드 로그인 비밀번호 |
 | `SESSION_SECRET` | api | 세션 쿠키 서명 키, 32자 이상 |
-| `ANTHROPIC_API_KEY` | worker | Claude Code 인증. 워커에만 둡니다 |
+| `CLAUDE_CODE_OAUTH_TOKEN` | worker | Claude 구독 토큰 (`claude setup-token`으로 발급). 워커에만 둡니다 |
+| `ANTHROPIC_API_KEY` | worker | (선택) API 키. 설정하면 구독 토큰보다 우선합니다 |
 | `GITHUB_TOKEN` | worker | 대상 저장소 clone용. Fine-grained 토큰, Contents 읽기 전용 권장 |
 | `DISCORD_WEBHOOK_ALERTS` | worker | #alerts 웹훅. 비우면 알림 생략 |
 | `DISCORD_WEBHOOK_DAILY` | worker | #daily-report 웹훅. 비우면 알림 생략 |
@@ -63,7 +64,8 @@
 | `JOB_TIMEOUT_SECONDS` | 600 | 작업 타임아웃 |
 | `JOB_MAX_ATTEMPTS` | 2 | 최대 시도 횟수. 이후 `failed` 확정 |
 | `QUEUE_ALERT_MINUTES` | 10 | 큐 대기가 이 시간을 넘으면 #alerts (시간당 1회) |
-| `CLAUDE_MAX_BUDGET_USD` | 1 | 작업 1건당 Claude 비용 상한 |
+| `CLAUDE_MAX_BUDGET_USD` | 1 | 작업 1건당 사용량 상한 (API 요금 환산 기준. 구독에서도 긴 분석을 끊는 용도로 동작) |
+| `USAGE_LIMIT_BACKOFF_MINUTES` | 30 | 사용 한도에 걸린 작업을 다시 시도하기까지 기다리는 시간 |
 | `CLAUDE_MODEL` | (CLI 기본값) | 사용할 모델 |
 | `CLAUDE_BIN` | `claude` | CLI 경로. Docker 이미지에서는 자동 설정 |
 
@@ -105,10 +107,14 @@ export function reportError(err: Error, logs: string, severity: 'critical' | 'er
 
 ## 워커의 Claude Code 실행 방식
 
-- `claude -p --bare`로 실행해 대상 저장소의 CLAUDE.md·훅·플러그인을 읽지 않습니다.
+- 인증은 `ANTHROPIC_API_KEY`가 있으면 API 키, 없으면 `CLAUDE_CODE_OAUTH_TOKEN`(구독 토큰)을 씁니다. 워커 시작 로그에 어느 쪽인지 표시됩니다.
+- 대상 저장소의 Claude 설정(CLAUDE.md, 훅, MCP 서버)이 분석에 끼어들지 않게 막습니다.
+  - API 키 모드: `--bare`로 실행합니다.
+  - 구독 모드: `--bare`가 구독 인증을 받지 않으므로, clone 직후 `.claude/`·`CLAUDE.md`·`CLAUDE.local.md`·`.mcp.json`을 지우고, `--setting-sources user`, `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`, `--strict-mcp-config`로 실행합니다.
 - 허용 도구는 `Read`, `Grep`, `Glob`뿐입니다. `--permission-mode dontAsk`로 그 밖의 도구 요청은 자동 거부됩니다.
 - 로그는 무작위 nonce 경계로 감싸 데이터로만 다루도록 프롬프트에 명시합니다.
-- Claude 프로세스에는 `ANTHROPIC_API_KEY` 외의 비밀(DB 주소, GitHub 토큰)을 넘기지 않습니다.
+- Claude 프로세스에는 Claude 인증 정보 하나 외의 비밀(DB 주소, GitHub 토큰)을 넘기지 않습니다.
+- 사용 한도·요청 한도·과부하 오류는 실패로 세지 않고 `USAGE_LIMIT_BACKOFF_MINUTES` 뒤로 미루며, #alerts에 시간당 한 번 알립니다.
 - 결과는 `--json-schema`로 구조화해 받고, 저장 전에 한 번 더 마스킹합니다.
 - 작업마다 임시 디렉터리에 얕은 clone을 받고 끝나면 지웁니다.
 

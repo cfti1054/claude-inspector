@@ -267,7 +267,7 @@ export function jobPage(j: JobDetail, notifications: NotificationRow[]): string 
     ${j.payload.occurred_at ? html`<div><dt>발생 시각</dt><dd class="mono">${fmtIso(j.payload.occurred_at)}</dd></div>` : ''}
     <div><dt>등록</dt><dd class="mono">${kstDateTime(j.created_at)}</dd></div>
     <div><dt>시도</dt><dd class="mono">${j.attempts}</dd></div>
-    ${j.cost_usd !== null ? html`<div><dt>Claude 비용</dt><dd class="mono">$${Number(j.cost_usd).toFixed(4)}</dd></div>` : ''}
+    ${j.cost_usd !== null ? html`<div><dt>API 환산 비용</dt><dd class="mono">$${Number(j.cost_usd).toFixed(4)}</dd></div>` : ''}
   </dl>
 </section>
 
@@ -363,6 +363,7 @@ const kindLabels: Record<string, string> = {
   job_failed: '작업 실패',
   daily_summary: '일일 요약',
   queue_backlog: '큐 정체',
+  usage_limit: 'Claude 사용 한도',
 };
 
 export function notificationsPage(rows: NotificationRow[]): string {
