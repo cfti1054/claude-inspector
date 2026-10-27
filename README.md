@@ -19,21 +19,23 @@
 | `src/scheduler.ts` | Railway Cron이 하루 1회 실행. `/health-check` 호출 후 종료 |
 | `src/cli/add-project.ts` | 프로젝트 등록, 토큰 발급·재발급, 비활성화 |
 | `migrations/` | Postgres 스키마 |
-| `railway/*.json` | Railway 서비스별 설정 (같은 Dockerfile, 시작 명령만 다름) |
+| `docs/railway-deploy.md` | Railway 배포 절차, 동작 확인, 운영, 문제 해결 |
 
 ## Railway 배포
 
-1. Railway 프로젝트에 **Postgres**를 추가합니다.
-2. 이 저장소로 서비스 3개를 만들고, 각 서비스의 Settings → Config-as-code 경로를 지정합니다.
+단계별 절차는 **[docs/railway-deploy.md](docs/railway-deploy.md)** 를 따릅니다. 요약은 다음과 같습니다.
 
-   | 서비스 | 설정 파일 | 비고 |
+1. Railway 프로젝트에 **Postgres**를 추가합니다.
+2. 이 저장소로 서비스 3개를 만듭니다. 모두 같은 Dockerfile로 빌드하고, **Settings → Deploy**에서 서비스별 시작 명령을 지정합니다. (Config as Code는 Railway에서 폐지 예정이라 쓰지 않습니다.)
+
+   | 서비스 | Custom Start Command | 비고 |
    | --- | --- | --- |
-   | `api` | `railway/api.json` | 공개 도메인 생성. 시작 시 마이그레이션 실행 |
-   | `worker` | `railway/worker.json` | 공개 도메인 없음 |
-   | `scheduler` | `railway/scheduler.json` | Cron `0 0 * * *` (UTC 00:00 = KST 09:00) |
+   | `api` | `sh -c "node dist/migrate.js && exec node dist/api/main.js"` | 공개 도메인 생성, Healthcheck Path `/healthz` |
+   | `worker` | `node dist/worker/main.js` | 공개 도메인 없음 |
+   | `scheduler` | `node dist/scheduler.js` | Cron Schedule `0 0 * * *` (UTC 00:00 = KST 09:00) |
 
 3. 아래 환경변수를 서비스별로 설정합니다.
-4. 배포 후 `api` 서비스 셸에서 프로젝트를 등록합니다 (아래 "프로젝트 등록").
+4. 배포 후 로컬에서 프로젝트를 등록합니다 (아래 "프로젝트 등록").
 
 ### 환경변수
 
@@ -48,7 +50,7 @@
 | `DISCORD_WEBHOOK_ALERTS` | worker | #alerts 웹훅. 비우면 알림 생략 |
 | `DISCORD_WEBHOOK_DAILY` | worker | #daily-report 웹훅. 비우면 알림 생략 |
 | `DASHBOARD_URL` | worker | 알림 속 작업 링크용 대시보드 주소 |
-| `API_URL` | scheduler | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}` |
+| `API_URL` | scheduler | api의 공개 주소 (예: `https://<도메인>.up.railway.app`) |
 
 선택 변수와 기본값:
 
@@ -68,7 +70,7 @@
 ## 프로젝트 등록
 
 ```sh
-npm run project:add -- --name my-project-a --repo https://github.com/owner/my-project-a --branch main --limit 20 --debounce 3600
+npm run dev:project:add -- --name my-project-a --repo https://github.com/owner/my-project-a --branch main --limit 20 --debounce 3600
 ```
 
 출력되는 토큰은 다시 볼 수 없습니다. 대상 프로젝트의 Railway 환경변수(예: `INSPECTOR_TOKEN`)에 저장하세요. 토큰 재발급은 `--rotate`, 비활성화는 `--deactivate`입니다.

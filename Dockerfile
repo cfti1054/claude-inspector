@@ -1,4 +1,4 @@
-# API, 워커, 스케줄러가 같은 이미지를 쓰고 Railway 서비스마다 시작 명령만 다르게 둔다 (railway/*.json)
+# API, 워커, 스케줄러가 같은 이미지를 쓰고 Railway 서비스마다 시작 명령만 다르게 둔다 (docs/railway-deploy.md)
 
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
