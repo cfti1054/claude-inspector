@@ -65,6 +65,14 @@ ${end}
 severity는 서비스 영향 기준으로 다시 판단하세요.`;
 }
 
+// 구독 사용 한도, 요청 한도, 과부하처럼 시간이 지나면 풀리는 실패. 작업 실패로 세지 않고 미룬다.
+export class UsageLimitError extends Error {}
+
+// CLI가 내는 정확한 문구는 버전마다 다를 수 있어 넓게 잡는다
+export function isUsageLimitMessage(text: string): boolean {
+  return /usage limit|rate[ _-]?limit|limit (?:reached|exceeded)|reached your|quota|too many requests|\b429\b|overloaded|\b529\b/i.test(text);
+}
+
 // CLI JSON 출력에서 리포트를 꺼낸다. structured_output이 있으면 쓰고, 없으면 result 텍스트에서 JSON을 찾는다.
 export function parseCliOutput(stdout: string): { report: Report; costUsd: number | null } {
   let outer: Record<string, unknown>;
@@ -74,7 +82,8 @@ export function parseCliOutput(stdout: string): { report: Report; costUsd: numbe
     throw new Error(`Claude 출력이 JSON이 아닙니다: ${stdout.slice(0, 200)}`);
   }
   if (outer.is_error === true) {
-    throw new Error(`Claude 실행 오류: ${String(outer.result ?? outer.subtype ?? 'unknown')}`.slice(0, 500));
+    const message = `Claude 실행 오류: ${String(outer.result ?? outer.subtype ?? 'unknown')}`.slice(0, 500);
+    throw isUsageLimitMessage(message) ? new UsageLimitError(message) : new Error(message);
   }
   const costUsd = typeof outer.total_cost_usd === 'number' ? outer.total_cost_usd : null;
 

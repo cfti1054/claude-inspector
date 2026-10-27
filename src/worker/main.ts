@@ -1,12 +1,12 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { config } from '../config.js';
 import { closeDb, db } from '../db.js';
-import { claimJob, completeJob, failJob, jobLabel, oldestQueuedAgeMinutes, recoverStaleJobs, type Job, type Project } from '../jobs.js';
+import { claimJob, completeJob, deferJob, failJob, jobLabel, oldestQueuedAgeMinutes, recoverStaleJobs, type Job, type Project } from '../jobs.js';
 import { mask } from '../mask.js';
 import { clip, colors, jobUrl, notify } from '../notify/discord.js';
 import { kstDate, KST_TODAY_START } from '../time.js';
-import { runClaude } from './claude.js';
-import { buildPrompt, type Report } from './report.js';
+import { claudeAuth, runClaude } from './claude.js';
+import { buildPrompt, UsageLimitError, type Report } from './report.js';
 import { prepareRepo } from './repo.js';
 
 let stopping = false;
@@ -38,6 +38,13 @@ async function processJob(job: Job & { project: Project }): Promise<void> {
     await notifyDone(job, safe);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    if (err instanceof UsageLimitError) {
+      // 한도가 풀릴 때까지 미룬다. 정기 점검도 아직 끝나지 않았으므로 일일 요약은 보내지 않는다.
+      await deferJob(job.id, `사용 한도로 ${config.usageLimitBackoffMinutes}분 뒤 재시도: ${message}`, config.usageLimitBackoffMinutes);
+      console.warn(`[worker] ${label} 사용 한도로 ${config.usageLimitBackoffMinutes}분 연기: ${message}`);
+      await notifyUsageLimit(message);
+      return; // clone 정리는 finally에서 한다
+    }
     const final = await failJob(job.id, message, config.maxAttempts);
     console.error(`[worker] ${label} 실패${final ? ' (확정)' : ' (재시도 예정)'}: ${message}`);
     if (final) await notifyFailed(job, message);
@@ -84,6 +91,23 @@ async function notifyFailed(job: Job & { project: Project }, message: string): P
         description: clip(mask(message), 1500),
       },
       { jobId: job.id },
+    ),
+  );
+}
+
+// 사용 한도 도달은 시간당 한 번만 알린다
+async function notifyUsageLimit(message: string): Promise<void> {
+  const hourKey = new Date().toISOString().slice(0, 13);
+  await safeNotify(() =>
+    notify(
+      'alerts',
+      'usage_limit',
+      {
+        title: `⏸️ Claude 사용 한도 도달: 작업을 ${config.usageLimitBackoffMinutes}분 뒤로 미룹니다`,
+        color: colors.warning,
+        description: clip(mask(message), 1000),
+      },
+      { dedupeKey: `usage-limit:${hourKey}` },
     ),
   );
 }
@@ -197,7 +221,11 @@ async function housekeeping(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  console.log(`[worker] 시작: 동시 실행 ${config.workerConcurrency}, 타임아웃 ${config.jobTimeoutMs / 1000}초`);
+  // 인증 정보가 없으면 작업을 꺼내기 전에 바로 실패한다
+  const auth = claudeAuth();
+  console.log(
+    `[worker] 시작: 인증 ${auth.kind === 'api-key' ? 'API 키' : 'Claude 구독 토큰'}, 동시 실행 ${config.workerConcurrency}, 타임아웃 ${config.jobTimeoutMs / 1000}초`,
+  );
   const shutdown = () => {
     console.log('[worker] 종료 신호 수신, 진행 중인 작업을 마친 뒤 종료합니다');
     stopping = true;

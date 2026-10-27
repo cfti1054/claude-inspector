@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -46,5 +46,30 @@ export async function prepareRepo(repoUrl: string, branch: string, githubToken: 
     // 오류 메시지에 토큰이 섞이지 않도록 한다
     throw new Error(String(err instanceof Error ? err.message : err).split(githubToken || '\u0000').join('[MASKED]'));
   }
+  try {
+    await stripClaudeConfig(dir);
+  } catch (err) {
+    await cleanup();
+    throw err;
+  }
   return { dir, cleanup };
+}
+
+// 대상 저장소에 들어 있는 Claude Code 설정(훅, 지침, MCP 서버)이 분석 실행에 끼어들지 않도록 지운다.
+// 구독 토큰 모드에서는 --bare를 쓸 수 없어 이 단계가 격리의 한 축이 된다.
+const CLAUDE_FILES = new Set(['CLAUDE.md', 'CLAUDE.local.md', '.mcp.json']);
+
+export async function stripClaudeConfig(dir: string): Promise<string[]> {
+  const removed: string[] = [];
+  const entries = await readdir(dir, { recursive: true, withFileTypes: true });
+  for (const e of entries) {
+    const full = path.join(e.parentPath, e.name);
+    const rel = path.relative(dir, full);
+    if (rel.split(path.sep)[0] === '.git') continue;
+    if ((e.isDirectory() && e.name === '.claude') || (!e.isDirectory() && CLAUDE_FILES.has(e.name))) {
+      await rm(full, { recursive: true, force: true });
+      removed.push(rel);
+    }
+  }
+  return removed;
 }

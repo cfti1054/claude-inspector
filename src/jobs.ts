@@ -103,9 +103,9 @@ export async function enqueueHealthChecks(): Promise<Array<{ project: string; jo
 // 여러 워커가 같은 작업을 잡지 않도록 SKIP LOCKED로 하나를 꺼낸다
 export async function claimJob(): Promise<(Job & { project: Project }) | null> {
   const r = await db().query<Job>(
-    `UPDATE jobs SET status = 'running', started_at = now(), attempts = attempts + 1, last_error = NULL
+    `UPDATE jobs SET status = 'running', started_at = now(), attempts = attempts + 1, last_error = NULL, run_after = NULL
       WHERE id = (
-        SELECT id FROM jobs WHERE status = 'queued'
+        SELECT id FROM jobs WHERE status = 'queued' AND (run_after IS NULL OR run_after <= now())
          ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
       RETURNING *`,
   );
@@ -152,6 +152,17 @@ export async function failJob(jobId: number, message: string, maxAttempts: numbe
   return r.rows[0]?.status === 'failed';
 }
 
+// 사용 한도처럼 작업 자체의 문제가 아닌 실패는 시도 횟수를 되돌리고 일정 시간 뒤로 미룬다
+export async function deferJob(jobId: number, message: string, minutes: number): Promise<void> {
+  await db().query(
+    `UPDATE jobs
+        SET status = 'queued', started_at = NULL, attempts = greatest(attempts - 1, 0),
+            run_after = now() + make_interval(mins => $3), last_error = $2
+      WHERE id = $1`,
+    [jobId, message.slice(0, 2000), minutes],
+  );
+}
+
 // 워커가 비정상 종료해 running으로 남은 작업을 되돌린다 (타임아웃의 2배 기준)
 export async function recoverStaleJobs(timeoutMs: number, maxAttempts: number): Promise<Job[]> {
   const r = await db().query<Job>(
@@ -168,7 +179,9 @@ export async function recoverStaleJobs(timeoutMs: number, maxAttempts: number): 
 
 export async function oldestQueuedAgeMinutes(c: pg.Pool | pg.PoolClient = db()): Promise<number> {
   const r = await c.query<{ m: number | null }>(
-    `SELECT floor(extract(epoch FROM now() - min(created_at)) / 60)::int AS m FROM jobs WHERE status = 'queued'`,
+    // 사용 한도로 미뤄 둔 작업은 정체로 보지 않는다
+    `SELECT floor(extract(epoch FROM now() - min(created_at)) / 60)::int AS m FROM jobs
+      WHERE status = 'queued' AND (run_after IS NULL OR run_after <= now())`,
   );
   return r.rows[0]?.m ?? 0;
 }

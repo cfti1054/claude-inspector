@@ -32,6 +32,8 @@ export const config = {
   claudeModel: process.env.CLAUDE_MODEL ?? '',
   claudeMaxBudgetUsd: num('CLAUDE_MAX_BUDGET_USD', 1),
   queueAlertMinutes: num('QUEUE_ALERT_MINUTES', 10),
+  // 구독 사용 한도 등에 걸렸을 때 작업을 다시 시도하기까지 기다리는 시간
+  usageLimitBackoffMinutes: num('USAGE_LIMIT_BACKOFF_MINUTES', 30),
 
   // Discord 웹훅 (비어 있으면 알림을 건너뛴다)
   discordWebhookAlerts: process.env.DISCORD_WEBHOOK_ALERTS ?? '',

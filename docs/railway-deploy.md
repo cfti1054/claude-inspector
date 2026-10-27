@@ -34,7 +34,7 @@ GitHub 저장소 (이 레포) ──▶ Railway 프로젝트
 
 | 준비물 | 만드는 곳 | 메모 |
 | --- | --- | --- |
-| Anthropic API 키 | Anthropic Console → API keys | 점검 서버 전용 키를 새로 만들고, 가능하면 월 사용 한도를 설정하세요. 값은 `sk-ant-...` |
+| Claude 구독 토큰 | 로컬 터미널에서 `claude setup-token` (아래 1-3) | Pro/Max 등 Claude 유료 구독이 필요합니다 |
 | GitHub 토큰 | GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** | Repository access는 **점검할 저장소만** 선택. Permissions는 **Contents: Read-only**(Metadata는 자동). 만료일을 정해 두세요 |
 | Discord 웹훅 2개 | 서버의 채널 편집 → 연동 → 웹후크 → 새 웹후크 → URL 복사 | `#alerts`용, `#daily-report`용으로 각각 하나. 채널이 없으면 먼저 만드세요 |
 | 무작위 비밀 값 3개 | 로컬 터미널 (아래 명령) | `SCHEDULER_TOKEN`, `DASHBOARD_PASSWORD`, `SESSION_SECRET` |
@@ -48,6 +48,21 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 - `SESSION_SECRET`은 32자 이상이어야 합니다. 위 명령의 결과(43자)면 충분합니다.
 - `DASHBOARD_PASSWORD`는 직접 외우기 쉬운 긴 문장으로 정해도 됩니다. 인터넷에 공개되는 로그인이므로 12자 이상을 권합니다.
 - 만든 값은 비밀번호 관리자에 보관하세요. 이 값들은 채팅, 이슈, 커밋에 붙이지 않습니다.
+
+### 1-3. Claude 구독 토큰 발급
+
+1. Claude Code가 설치된 로컬 PC의 터미널에서 실행합니다.
+   ```sh
+   claude setup-token
+   ```
+2. 브라우저가 열리면 **구독 중인 Claude 계정**으로 로그인하고 승인합니다.
+3. 터미널에 출력되는 토큰(`sk-ant-oat...`으로 시작)을 복사해 비밀번호 관리자에 보관합니다. 이 값이 worker의 `CLAUDE_CODE_OAUTH_TOKEN`이 됩니다.
+
+주의할 점:
+- **이용 약관을 먼저 확인하세요.** 구독을 서버에서 자동 실행하는 데 써도 되는지는 이 문서에서 확인하지 못했습니다. Anthropic의 최신 이용 약관과 사용 정책을 확인한 뒤 쓰세요.
+- **사용 한도를 평소 사용과 공유합니다.** 서버 분석이 많으면 본인이 쓰는 Claude 대화와 Claude Code의 한도가 함께 줄어듭니다. 한도에 걸리면 서버는 작업을 `USAGE_LIMIT_BACKOFF_MINUTES`(기본 30분) 뒤로 미루고 #alerts에 알립니다.
+- **이 토큰은 계정 전체 권한입니다.** 새면 계정이 위험하므로 worker 서비스 외에는 두지 마세요. 의심되면 Claude 계정 설정에서 해당 세션·토큰을 끊고 다시 발급하세요.
+- API 키(`ANTHROPIC_API_KEY`)도 함께 설정하면 **API 키가 우선**합니다. 구독만 쓰려면 API 키를 넣지 마세요.
 
 ## 2. Railway 프로젝트 만들기
 
@@ -97,17 +112,19 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 | 변수 | 값 |
 | --- | --- |
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
-| `ANTHROPIC_API_KEY` | Anthropic API 키 |
+| `CLAUDE_CODE_OAUTH_TOKEN` | 1-3에서 발급한 구독 토큰 |
 | `GITHUB_TOKEN` | GitHub Fine-grained 토큰 |
 | `DISCORD_WEBHOOK_ALERTS` | #alerts 웹훅 URL |
 | `DISCORD_WEBHOOK_DAILY` | #daily-report 웹훅 URL |
 | `DASHBOARD_URL` | api의 공개 주소. 예: `https://inspector-production.up.railway.app` (끝에 `/` 없이) |
 | `CLAUDE_MODEL` | `claude-sonnet-5-5` (전체 이름으로 고정 권장) |
-| `CLAUDE_MAX_BUDGET_USD` | `1` (작업 1건당 비용 상한) |
+| `CLAUDE_MAX_BUDGET_USD` | `1` (작업 1건당 사용량 상한, API 요금 환산 기준) |
 | `WORKER_CONCURRENCY` | `1` |
 
 - `DASHBOARD_URL`은 api 도메인을 만든 뒤에 채웁니다. Discord 알림의 "작업 보기" 링크에 쓰입니다.
-- `CLAUDE_MODEL`을 비우면 Claude Code의 기본 모델이 쓰입니다. 비용을 예측하려면 명시하세요.
+- `CLAUDE_MODEL`을 비우면 Claude Code의 기본 모델이 쓰입니다. 구독 한도를 아끼려면 `claude-sonnet-5-5`처럼 명시하세요. 상위 모델일수록 한도가 빨리 줄어듭니다.
+- `ANTHROPIC_API_KEY`는 넣지 않습니다. 넣으면 구독 토큰 대신 API 키(유료 과금)가 쓰입니다.
+- (선택) `USAGE_LIMIT_BACKOFF_MINUTES`: 사용 한도에 걸렸을 때 다시 시도하기까지 기다리는 시간. 기본 `30`.
 - 공개 저장소가 아닌 경우 `GITHUB_TOKEN`이 없으면 clone이 실패합니다.
 
 ### 3-3. scheduler
@@ -139,7 +156,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 | 서비스 | 정상 로그 |
 | --- | --- |
 | api | `applied 001_init.sql` (처음 한 번), 이어서 `Server listening at http://0.0.0.0:...` |
-| worker | `[worker] 시작: 동시 실행 1, 타임아웃 600초` |
+| worker | `[worker] 시작: 인증 Claude 구독 토큰, 동시 실행 1, 타임아웃 600초` (`인증 API 키`로 나오면 `ANTHROPIC_API_KEY`가 설정돼 있는 것) |
 | scheduler | Cron 서비스라 다음 실행 시각 전까지는 로그가 없는 것이 정상입니다 |
 
 3. 브라우저에서 확인합니다.
@@ -234,13 +251,15 @@ curl -i -X POST https://<api 도메인>/health-check \
 | --- | --- | --- |
 | 프로젝트별 일일 호출 상한 | 프로젝트 등록 `--limit` | 20 (환경변수 `DEFAULT_DAILY_LIMIT`) |
 | 같은 오류 재분석 금지 시간 | 프로젝트 등록 `--debounce` | 3600초 |
-| 작업 1건당 비용 상한 | worker `CLAUDE_MAX_BUDGET_USD` | 1달러 |
+| 작업 1건당 사용량 상한 | worker `CLAUDE_MAX_BUDGET_USD` | 1달러 (API 요금 환산) |
+| 사용 한도 도달 시 대기 | worker `USAGE_LIMIT_BACKOFF_MINUTES` | 30분 |
 | 작업 타임아웃 | worker `JOB_TIMEOUT_SECONDS` | 600초 |
 | 최대 시도 횟수 | worker `JOB_MAX_ATTEMPTS` | 2 |
 | 워커 동시 실행 | worker `WORKER_CONCURRENCY` | 1 (최대 2) |
 
-- 최악의 하루 비용은 대략 `(프로젝트 수 × 일일 상한 + 정기 점검) × 작업당 비용 상한`입니다. 처음에는 상한을 낮게 시작하세요.
-- Anthropic Console에서 이 API 키의 월 지출 한도를 반드시 걸어 두세요. 코드 쪽 상한과 별개로 마지막 방어선이 됩니다.
+- 구독 토큰을 쓰면 추가 요금은 없지만, 서버 분석이 **구독 사용 한도를 평소 사용과 함께 소진**합니다. 하루 최대 작업 수는 `프로젝트 수 × 일일 상한 + 정기 점검`이므로, 처음에는 일일 상한을 낮게(예: 5~10) 시작하세요.
+- `CLAUDE_MAX_BUDGET_USD`는 구독에서도 API 요금 환산 사용량으로 계산돼, 한 건이 한도를 과하게 쓰는 것을 막는 용도로 동작합니다. 대시보드 작업 상세의 "API 환산 비용"으로 건당 사용량을 가늠할 수 있습니다.
+- API 키로 바꿔 쓸 경우에는 Anthropic Console에서 키의 월 지출 한도를 반드시 걸어 두세요.
 - Railway에서도 프로젝트 Usage 한도(Usage limit)를 설정할 수 있는지 확인하세요.
 
 ## 8. 운영
@@ -274,8 +293,10 @@ curl -i -X POST https://<api 도메인>/health-check \
 | `/inspect`가 429 | 오늘 호출 상한을 넘음. 한국 시간 자정에 초기화 |
 | 작업이 `대기`에서 멈춤 | worker가 실행 중인지, worker 로그에 오류가 없는지 확인. 10분 넘게 대기하면 #alerts로 알림이 옴 |
 | 작업이 `실패`, 사유가 clone 오류 | `GITHUB_TOKEN`의 저장소 접근 범위와 만료일, 프로젝트 등록 시 `--repo` 주소 확인 |
-| 작업이 `실패`, `Invalid API key` | worker의 `ANTHROPIC_API_KEY` 확인 |
-| 작업이 `실패`, 결제·크레딧 관련 | Anthropic 계정 크레딧 확인 |
+| worker가 시작 직후 종료 (`ANTHROPIC_API_KEY 또는 CLAUDE_CODE_OAUTH_TOKEN`) | worker에 `CLAUDE_CODE_OAUTH_TOKEN`이 없음 |
+| 작업이 `실패`, `OAuth access token is invalid` | 구독 토큰이 틀리거나 만료·취소됨. `claude setup-token`으로 재발급 후 교체 |
+| 작업이 `실패`, `Invalid API key` | `ANTHROPIC_API_KEY`가 설정돼 있어 API 키 모드로 동작 중. 구독만 쓰려면 이 변수를 삭제 |
+| 작업이 `대기`, 사유 `사용 한도로 30분 뒤 재시도` | 구독 사용 한도 도달. 한도가 풀리면 자동으로 다시 실행됨. 자주 생기면 일일 상한을 낮추거나 더 가벼운 모델 사용 |
 | 작업이 `실패`, 타임아웃 | 저장소가 크거나 분석이 오래 걸림. `JOB_TIMEOUT_SECONDS` 상향 또는 `CLAUDE_MAX_BUDGET_USD` 조정 |
 | 작업이 `실패`, 비용 상한 | 분석이 상한에 걸려 중단됨. `CLAUDE_MAX_BUDGET_USD` 상향 |
 | Discord 알림이 안 옴 | 웹훅 변수가 비었는지, URL이 삭제된 웹훅은 아닌지 확인. worker 로그의 `[discord]` 줄 참고 |
@@ -283,10 +304,10 @@ curl -i -X POST https://<api 도메인>/health-check \
 
 ## 10. 보안 점검표
 
-- [ ] `ANTHROPIC_API_KEY`는 **worker에만** 설정했다 (api와 scheduler에는 넣지 않음)
+- [ ] `CLAUDE_CODE_OAUTH_TOKEN`은 **worker에만** 설정했다 (api와 scheduler에는 넣지 않음)
+- [ ] 구독을 서버 자동 실행에 쓰는 것이 이용 약관에 맞는지 확인했다
 - [ ] `GITHUB_TOKEN`은 Contents 읽기 전용이고, 필요한 저장소만 선택했으며, 만료일이 있다
 - [ ] worker와 scheduler에는 공개 도메인이 없다
 - [ ] `DASHBOARD_PASSWORD`는 길고 다른 곳에서 쓰지 않는 값이다
-- [ ] Anthropic 키에 월 지출 한도를 걸었다
 - [ ] 비밀 값을 저장소, 이슈, 채팅에 붙이지 않았다 (`.env` 파일은 `.gitignore`에 포함됨)
 - [ ] 프로젝트 토큰은 대상 프로젝트의 환경변수에만 있다 (DB에는 해시만 저장됨)
