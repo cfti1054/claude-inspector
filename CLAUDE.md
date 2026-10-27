@@ -1,7 +1,10 @@
 # claude-inspector — Claude Code 작업 지침
 
 ## 프로젝트 개요
-- 목적: 아직 초기 단계. 구체적인 스택과 구조는 정해지면 이 파일에 갱신한다.
+- 목적: 여러 프로젝트의 오류와 정기 상태를 Claude Code로 점검하는 중앙 서버. 설계는 `중앙 Claude 점검 서버 개발서.md`, 구성과 배포는 `README.md`를 본다.
+- 스택: TypeScript(ESM, Node 22+), Fastify, Postgres(pg), zod. 배포는 Railway (Dockerfile 하나, `railway/*.json`으로 api·worker·scheduler 분리).
+- 대시보드는 서버 렌더링 HTML(`src/dashboard/`)이며 JavaScript를 쓰지 않는다. 보간은 `html```로만 해 이스케이프를 유지한다.
+- 검증: `npm run typecheck`, `npm test`(DB 불필요), `npm run build`.
 - 플랫폼: Windows 11, 기본 셸은 PowerShell. POSIX 스크립트가 필요하면 Bash 도구를 쓴다.
 
 ## 작업 원칙
