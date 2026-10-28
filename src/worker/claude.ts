@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { config } from '../config.js';
-import { isUsageLimitMessage, parseCliOutput, reportJsonSchema, systemPrompt, UsageLimitError, type Report } from './report.js';
+import {
+  extractUsage, isUsageLimitMessage, parseCliOutput, reportJsonSchema, systemPrompt, UsageLimitError, type Report, type UsageEntry,
+} from './report.js';
 
 // 읽기 전용 도구만 허용한다. 5단계(PR 생성) 전까지 수정·실행 도구는 쓰지 않는다.
 const ALLOWED_TOOLS = ['Read', 'Grep', 'Glob'];
@@ -58,8 +60,24 @@ export function claudeEnv(auth: ClaudeAuth, base: NodeJS.ProcessEnv = process.en
 
 export class TimeoutError extends Error {}
 
+// 실패한 실행에서도 쓴 만큼 기록할 수 있도록 오류에 사용량을 붙여 던진다
+export function usageOf(err: unknown): UsageEntry[] {
+  const u = (err as { usage?: unknown } | null)?.usage;
+  return Array.isArray(u) ? (u as UsageEntry[]) : [];
+}
+
+function withUsage<E extends Error>(err: E, usage: UsageEntry[]): E {
+  return Object.assign(err, { usage });
+}
+
+export interface ClaudeResult {
+  report: Report;
+  costUsd: number | null;
+  usage: UsageEntry[];
+}
+
 // 프롬프트는 인자 길이 제한을 피하려고 stdin으로 넘긴다.
-export function runClaude(cwd: string, prompt: string, timeoutMs = config.jobTimeoutMs): Promise<{ report: Report; costUsd: number | null }> {
+export function runClaude(cwd: string, prompt: string, timeoutMs = config.jobTimeoutMs): Promise<ClaudeResult> {
   const auth = claudeAuth();
 
   return new Promise((resolve, reject) => {
@@ -82,14 +100,15 @@ export function runClaude(cwd: string, prompt: string, timeoutMs = config.jobTim
     });
     child.on('close', (code) => {
       clearTimeout(timer);
-      if (timedOut) return reject(new TimeoutError(`작업 타임아웃 (${Math.round(timeoutMs / 1000)}초)`));
+      const usage = extractUsage(stdout, config.claudeModel || 'unknown');
+      if (timedOut) return reject(withUsage(new TimeoutError(`작업 타임아웃 (${Math.round(timeoutMs / 1000)}초)`), usage));
       try {
-        resolve(parseCliOutput(stdout));
+        resolve({ ...parseCliOutput(stdout), usage });
       } catch (err) {
-        if (err instanceof UsageLimitError) return reject(err);
+        if (err instanceof UsageLimitError) return reject(withUsage(err, usage));
         const detail = code === 0 ? '' : ` (exit ${code}) ${stderr.slice(-500)}`;
         const message = `${err instanceof Error ? err.message : String(err)}${detail}`;
-        reject(isUsageLimitMessage(stderr) ? new UsageLimitError(message) : new Error(message));
+        reject(withUsage(isUsageLimitMessage(stderr) ? new UsageLimitError(message) : new Error(message), usage));
       }
     });
 

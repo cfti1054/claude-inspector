@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { config } from '../config.js';
 import { dashboardRoutes } from '../dashboard/routes.js';
 import { apiRoutes } from './routes.js';
+import { usageRoutes } from './usage-routes.js';
 
 const CSP = [
   "default-src 'none'",
@@ -36,6 +37,8 @@ export function buildApp(): FastifyInstance {
   });
 
   app.register(apiRoutes);
+  // 별도 플러그인으로 등록해 인증 훅이 /usage 경로에만 적용되게 한다
+  app.register(usageRoutes);
   app.register(dashboardRoutes);
   return app;
 }

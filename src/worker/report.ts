@@ -65,6 +65,57 @@ ${end}
 severity는 서비스 영향 기준으로 다시 판단하세요.`;
 }
 
+export interface UsageEntry {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number | null;
+}
+
+function count(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
+}
+
+// CLI JSON 출력에서 모델별 사용량을 꺼낸다. 실패한 실행도 사용량을 남기므로 결과 파싱과 따로 둔다.
+// modelUsage(모델별)가 있으면 그것을, 없으면 usage(합계)를 모델 이름 없이 쓴다. 형식이 다르면 빈 배열.
+export function extractUsage(stdout: string, fallbackModel = 'unknown'): UsageEntry[] {
+  let outer: Record<string, unknown>;
+  try {
+    outer = JSON.parse(stdout) as Record<string, unknown>;
+  } catch {
+    return [];
+  }
+  if (!outer || typeof outer !== 'object') return [];
+
+  const byModel = outer.modelUsage;
+  if (byModel && typeof byModel === 'object' && Object.keys(byModel).length > 0) {
+    return Object.entries(byModel as Record<string, Record<string, unknown>>).map(([model, u]) => ({
+      model,
+      inputTokens: count(u?.inputTokens),
+      outputTokens: count(u?.outputTokens),
+      cacheReadTokens: count(u?.cacheReadInputTokens),
+      cacheCreationTokens: count(u?.cacheCreationInputTokens),
+      costUsd: typeof u?.costUSD === 'number' ? u.costUSD : null,
+    }));
+  }
+
+  const u = outer.usage as Record<string, unknown> | undefined;
+  if (u && typeof u === 'object') {
+    const entry: UsageEntry = {
+      model: fallbackModel,
+      inputTokens: count(u.input_tokens),
+      outputTokens: count(u.output_tokens),
+      cacheReadTokens: count(u.cache_read_input_tokens),
+      cacheCreationTokens: count(u.cache_creation_input_tokens),
+      costUsd: typeof outer.total_cost_usd === 'number' ? outer.total_cost_usd : null,
+    };
+    if (entry.inputTokens + entry.outputTokens + entry.cacheReadTokens + entry.cacheCreationTokens > 0) return [entry];
+  }
+  return [];
+}
+
 // 구독 사용 한도, 요청 한도, 과부하처럼 시간이 지나면 풀리는 실패. 작업 실패로 세지 않고 미룬다.
 export class UsageLimitError extends Error {}
 
