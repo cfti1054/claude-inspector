@@ -1,6 +1,7 @@
 import { jobLabel, type JobStatus } from '../jobs.js';
 import { ago, duration, kstDate, kstDateTime, kstShort, kstTimeSec } from '../time.js';
 import { html, qs, type SafeHtml } from './html.js';
+import type { UsageEntry } from '../worker/report.js';
 import type { JobDetail, JobRow, NotificationRow, ProjectRow, Range, StatusFilter } from './queries.js';
 
 const FONT_LINKS = html`
@@ -223,7 +224,11 @@ export function jobsPage(d: JobsPageData): string {
 
 // ───────────────────────── 작업 상세 ─────────────────────────
 
-export function jobPage(j: JobDetail, notifications: NotificationRow[]): string {
+const num = new Intl.NumberFormat('ko-KR');
+
+export function jobPage(j: JobDetail, notifications: NotificationRow[], usage: UsageEntry[] = []): string {
+  const tokensIn = usage.reduce((s, u) => s + u.inputTokens + u.cacheReadTokens + u.cacheCreationTokens, 0);
+  const tokensOut = usage.reduce((s, u) => s + u.outputTokens, 0);
   const now = new Date();
   const title = j.summary ?? (j.type === 'health' ? '정기 점검' : '오류 분석');
   const inProgress = j.status === 'queued' || j.status === 'running';
@@ -268,6 +273,10 @@ export function jobPage(j: JobDetail, notifications: NotificationRow[]): string 
     <div><dt>등록</dt><dd class="mono">${kstDateTime(j.created_at)}</dd></div>
     <div><dt>시도</dt><dd class="mono">${j.attempts}</dd></div>
     ${j.cost_usd !== null ? html`<div><dt>API 환산 비용</dt><dd class="mono">$${Number(j.cost_usd).toFixed(4)}</dd></div>` : ''}
+    ${usage.length
+      ? html`<div><dt>토큰 (입력 / 출력)</dt><dd class="mono">${num.format(tokensIn)} / ${num.format(tokensOut)}</dd></div>
+    <div><dt>모델</dt><dd class="mono">${usage.map((u) => u.model).join(', ')}</dd></div>`
+      : ''}
   </dl>
 </section>
 

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { required } from '../config.js';
 import { safeEqual, signSession, verifySession } from '../security.js';
+import { usageForJob } from '../usage.js';
 import { getJob, jobCounts, listJobs, listNotifications, listProjects, queueState, type Range, type StatusFilter } from './queries.js';
 import { css } from './styles.js';
 import { jobPage, jobsPage, loginPage, notificationsPage, projectsPage } from './views.js';
@@ -95,7 +96,8 @@ export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
       const id = Number(req.params.id);
       const job = Number.isSafeInteger(id) && id > 0 ? await getJob(id) : null;
       if (!job) return sendHtml(reply, '<!doctype html><meta charset="utf-8"><p>작업을 찾을 수 없습니다. <a href="/dashboard">목록으로</a></p>', 404);
-      return sendHtml(reply, jobPage(job, await listNotifications(id)));
+      const [notifications, usage] = await Promise.all([listNotifications(id), usageForJob(id)]);
+      return sendHtml(reply, jobPage(job, notifications, usage));
     });
 
     scope.get('/dashboard/projects', async (_req, reply) => sendHtml(reply, projectsPage(await listProjects())));

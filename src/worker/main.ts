@@ -5,8 +5,9 @@ import { claimJob, completeJob, deferJob, failJob, jobLabel, oldestQueuedAgeMinu
 import { mask } from '../mask.js';
 import { clip, colors, jobUrl, notify } from '../notify/discord.js';
 import { kstDate, KST_TODAY_START } from '../time.js';
-import { claudeAuth, runClaude } from './claude.js';
-import { buildPrompt, UsageLimitError, type Report } from './report.js';
+import { recordUsage, type UsageOutcome } from '../usage.js';
+import { claudeAuth, runClaude, usageOf } from './claude.js';
+import { buildPrompt, UsageLimitError, type Report, type UsageEntry } from './report.js';
 import { prepareRepo } from './repo.js';
 
 let stopping = false;
@@ -24,7 +25,8 @@ async function processJob(job: Job & { project: Project }): Promise<void> {
       occurredAt: job.payload.occurred_at,
       logs: job.payload.logs,
     });
-    const { report, costUsd } = await runClaude(repo.dir, prompt);
+    const { report, costUsd, usage } = await runClaude(repo.dir, prompt);
+    await saveUsage(job, 'done', usage);
     // 결과에 비밀 값이 섞여 나오는 경우를 대비해 저장 전에 마스킹한다
     const safe: Report = {
       ...report,
@@ -38,6 +40,7 @@ async function processJob(job: Job & { project: Project }): Promise<void> {
     await notifyDone(job, safe);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await saveUsage(job, err instanceof UsageLimitError ? 'deferred' : 'failed', usageOf(err));
     if (err instanceof UsageLimitError) {
       // 한도가 풀릴 때까지 미룬다. 정기 점검도 아직 끝나지 않았으므로 일일 요약은 보내지 않는다.
       await deferJob(job.id, `사용 한도로 ${config.usageLimitBackoffMinutes}분 뒤 재시도: ${message}`, config.usageLimitBackoffMinutes);
@@ -52,6 +55,23 @@ async function processJob(job: Job & { project: Project }): Promise<void> {
     await repo?.cleanup();
   }
   if (job.type === 'health') await maybeSendDailySummary();
+}
+
+// 사용량 기록 실패가 작업 결과를 바꾸지 않도록 오류는 로그만 남긴다
+async function saveUsage(job: Job & { project: Project }, outcome: UsageOutcome, entries: UsageEntry[]): Promise<void> {
+  try {
+    await recordUsage({
+      jobId: job.id,
+      projectId: job.project_id,
+      jobType: job.type,
+      attempt: job.attempts,
+      outcome,
+      authKind: claudeAuth().kind,
+      entries,
+    });
+  } catch (err) {
+    console.error(`[worker] ${jobLabel(job.id)} 사용량 기록 실패:`, err instanceof Error ? err.message : err);
+  }
 }
 
 async function notifyDone(job: Job & { project: Project }, report: Report): Promise<void> {

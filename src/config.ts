@@ -35,6 +35,10 @@ export const config = {
   // 구독 사용 한도 등에 걸렸을 때 작업을 다시 시도하기까지 기다리는 시간
   usageLimitBackoffMinutes: num('USAGE_LIMIT_BACKOFF_MINUTES', 30),
 
+  // 사용량 조회 API (비어 있으면 /usage를 끈다)
+  usageApiToken: process.env.USAGE_API_TOKEN ?? '',
+  usageSourceName: process.env.USAGE_SOURCE_NAME || 'claude-inspector',
+
   // Discord 웹훅 (비어 있으면 알림을 건너뛴다)
   discordWebhookAlerts: process.env.DISCORD_WEBHOOK_ALERTS ?? '',
   discordWebhookDaily: process.env.DISCORD_WEBHOOK_DAILY ?? '',

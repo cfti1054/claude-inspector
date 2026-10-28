@@ -42,7 +42,11 @@ test('작업 상세는 진행 중이면 자동 새로고침하고 로그를 이�
     error_hash: 'a3f9c1', attempts: 1, payload: { logs: '</pre><script>x</script>', occurred_at: now.toISOString() },
     body: null, cost_usd: null, report_at: null,
   };
-  const out = jobPage(detail, []);
+  const out = jobPage(detail, [], [
+    { model: 'claude-sonnet-5-5', inputTokens: 1200, outputTokens: 340, cacheReadTokens: 5000, cacheCreationTokens: 800, costUsd: 0.04 },
+  ]);
+  assert.match(out, /7,000 \/ 340/); // 입력은 캐시 읽기·생성을 포함한 합계
+  assert.match(out, /claude-sonnet-5-5/);
   assert.match(out, /http-equiv="refresh" content="10"/);
   assert.doesNotMatch(out, /<script>x<\/script>/);
   assert.match(out, /분석을 마치면/);

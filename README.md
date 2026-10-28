@@ -13,13 +13,14 @@
 
 | 경로 | 역할 |
 | --- | --- |
-| `src/api/` | Fastify 서버. `/inspect`, `/health-check`, `/jobs/:id`, `/projects`, `/healthz` |
+| `src/api/` | Fastify 서버. `/inspect`, `/health-check`, `/jobs/:id`, `/projects`, `/healthz`, `/usage/*` |
 | `src/dashboard/` | 서버 렌더링 대시보드 (작업 목록, 작업 상세, 프로젝트, 알림 기록) |
 | `src/worker/` | 큐에서 작업을 꺼내 저장소를 clone하고 Claude Code를 headless로 실행 |
 | `src/scheduler.ts` | Railway Cron이 하루 1회 실행. `/health-check` 호출 후 종료 |
 | `src/cli/add-project.ts` | 프로젝트 등록, 토큰 발급·재발급, 비활성화 |
 | `migrations/` | Postgres 스키마 |
 | `docs/railway-deploy.md` | Railway 배포 절차, 동작 확인, 운영, 문제 해결 |
+| `docs/usage-api.md` | 외부 사용량 집계(AI Usage Hub 등)용 사용량 API 명세 |
 
 ## Railway 배포
 
@@ -51,6 +52,7 @@
 | `DISCORD_WEBHOOK_ALERTS` | worker | #alerts 웹훅. 비우면 알림 생략 |
 | `DISCORD_WEBHOOK_DAILY` | worker | #daily-report 웹훅. 비우면 알림 생략 |
 | `DASHBOARD_URL` | worker | 알림 속 작업 링크용 대시보드 주소 |
+| `USAGE_API_TOKEN` | api | (선택) 사용량 API 읽기 토큰. 비우면 `/usage`가 꺼짐 ([docs/usage-api.md](docs/usage-api.md)) |
 | `API_URL` | scheduler | api의 공개 주소 (예: `https://<도메인>.up.railway.app`) |
 
 선택 변수와 기본값:
@@ -117,6 +119,13 @@ export function reportError(err: Error, logs: string, severity: 'critical' | 'er
 - 사용 한도·요청 한도·과부하 오류는 실패로 세지 않고 `USAGE_LIMIT_BACKOFF_MINUTES` 뒤로 미루며, #alerts에 시간당 한 번 알립니다.
 - 결과는 `--json-schema`로 구조화해 받고, 저장 전에 한 번 더 마스킹합니다.
 - 작업마다 임시 디렉터리에 얕은 clone을 받고 끝나면 지웁니다.
+
+## 사용량 API
+
+워커는 Claude Code 실행마다 모델별 토큰 수와 API 환산 금액을 `usage_records`에 남깁니다. 외부 집계 도구는 `USAGE_API_TOKEN`으로 다음을 조회할 수 있습니다. 형식과 동기화 방법은 [docs/usage-api.md](docs/usage-api.md)를 보세요.
+
+- `GET /usage/records?after_id=` — 마지막으로 받은 id 이후 기록 (증분 동기화)
+- `GET /usage/summary?from=&to=&group_by=day|project|model` — 기간 합계
 
 ## 알림 규칙
 

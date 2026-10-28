@@ -96,6 +96,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 | `DASHBOARD_PASSWORD` | 1-2에서 만든 값 |
 | `SESSION_SECRET` | 1-2에서 만든 값 (32자 이상) |
 | `DEFAULT_DAILY_LIMIT` | `10` (처음에는 낮게 시작하는 것을 권장) |
+| `USAGE_API_TOKEN` | (선택) AI Usage Hub 등이 사용량을 조회할 때 쓰는 토큰. 1-2의 명령으로 만든 무작위 값. 비우면 사용량 API가 꺼짐 ([usage-api.md](usage-api.md)) |
 
 - `PORT`는 Railway가 자동으로 주입합니다. 서버는 `0.0.0.0:$PORT`로 듣습니다.
 - 시작 시 `DATABASE_URL`, `SCHEDULER_TOKEN`, `DASHBOARD_PASSWORD`, `SESSION_SECRET`이 하나라도 없으면 서버가 바로 종료합니다. 배포 로그에 `Missing required environment variable: ...`이 보이면 이 변수를 확인하세요.
